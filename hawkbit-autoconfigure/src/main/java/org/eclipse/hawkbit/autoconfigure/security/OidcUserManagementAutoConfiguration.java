@@ -9,7 +9,9 @@
 package org.eclipse.hawkbit.autoconfigure.security;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +31,7 @@ import org.eclipse.hawkbit.im.authentication.UserAuthenticationFilter;
 import org.eclipse.hawkbit.repository.SystemManagement;
 import org.eclipse.hawkbit.security.SystemSecurityContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.security.oauth2.client.ClientsConfiguredCondition;
 import org.springframework.context.annotation.Bean;
@@ -41,6 +44,9 @@ import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
 import org.springframework.security.core.authority.mapping.SimpleAuthorityMapper;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
@@ -75,6 +81,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Configuration
 @Conditional(value = ClientsConfiguredCondition.class)
+@AutoConfigureBefore({InMemoryUserManagementAutoConfiguration.class})
 public class OidcUserManagementAutoConfiguration {
 
     /**
@@ -86,6 +93,12 @@ public class OidcUserManagementAutoConfiguration {
     public OAuth2UserService<OidcUserRequest, OidcUser> oidcUserDetailsService(
             final JwtAuthoritiesExtractor extractor) {
         return new JwtAuthoritiesOidcUserService(extractor);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public UserDetailsService userDetailsService() {
+        return new OidcInMemoryUserDetailsService();
     }
 
     /**
@@ -173,6 +186,69 @@ class JwtAuthoritiesOidcUserService extends OidcUserService {
     }
 }
 
+class OidcUserDetails implements UserDetails {
+    private String username;
+    private Collection<? extends GrantedAuthority> authorities;
+
+    OidcUserDetails(final String username, final Collection<? extends GrantedAuthority> authorities) {
+        this.username = username;
+        this.authorities = authorities;
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return authorities;
+    }
+
+    @Override
+    public String getPassword() {
+        return null;
+    }
+
+    @Override
+    public String getUsername() {
+        return this.username;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+}
+
+class OidcInMemoryUserDetailsService implements UserDetailsService {
+    private final Map<String, OidcUserDetails> userDetailsMap = new HashMap<>();
+
+    @Override
+    public UserDetails loadUserByUsername(final String username) {
+        final OidcUserDetails user = userDetailsMap.get(username);
+        if (user == null) {
+            throw new UsernameNotFoundException("No such user");
+        }
+        // Spring mutates the data, so we must return a copy here
+        return new OidcUserDetails(user.getUsername(), user.getAuthorities());
+    }
+
+    void addUser(final String username, final Collection<? extends GrantedAuthority> authorities) {
+        this.userDetailsMap.put(username, new OidcUserDetails(username, authorities));
+    }
+}
+
 /**
  * OpenID Connect Authentication Success Handler which load tenant data
  */
@@ -184,14 +260,21 @@ class OidcAuthenticationSuccessHandler extends SavedRequestAwareAuthenticationSu
     @Autowired
     private SystemSecurityContext systemSecurityContext;
 
+    @Autowired
+    private UserDetailsService userDetailsService;
+
     @Override
     public void onAuthenticationSuccess(final HttpServletRequest request, final HttpServletResponse response,
             final Authentication authentication) throws ServletException, IOException {
-        if (authentication instanceof AbstractAuthenticationToken) {
+        if (authentication instanceof OAuth2AuthenticationToken) {
             final String defaultTenant = "DEFAULT";
 
-            final AbstractAuthenticationToken token = (AbstractAuthenticationToken) authentication;
+            final AbstractAuthenticationToken token = (OAuth2AuthenticationToken) authentication;
             token.setDetails(new TenantAwareAuthenticationDetails(defaultTenant, false));
+
+            DefaultOidcUser user = (DefaultOidcUser) authentication.getPrincipal();
+            ((OidcInMemoryUserDetailsService) userDetailsService).addUser(user.getPreferredUsername(),
+                    authentication.getAuthorities());
 
             systemSecurityContext.runAsSystemAsTenant(systemManagement::getTenantMetadata, defaultTenant);
         }
