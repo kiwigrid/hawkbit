@@ -756,6 +756,9 @@ class TenantMetadataSavedRequestAwareVaadinAuthenticationSuccessHandler extends 
     @Autowired
     private SystemSecurityContext systemSecurityContext;
 
+    @Autowired
+    private MultiUserProperties multiUserProperties;
+
     @Override
     public void onAuthenticationSuccess(final Authentication authentication) throws Exception {
 
@@ -770,8 +773,8 @@ class TenantMetadataSavedRequestAwareVaadinAuthenticationSuccessHandler extends 
             // LoginView. This needs to be changed with the update of
             // vaadin4spring 0.0.7 because it
             // has been fixed.
-            final String defaultTenant = "DEFAULT";
-            systemSecurityContext.runAsSystemAsTenant(systemManagement::getTenantMetadata, defaultTenant);
+            systemSecurityContext.runAsSystemAsTenant(systemManagement::getTenantMetadata,
+                    multiUserProperties.getDefaultTenant());
         }
 
         super.onAuthenticationSuccess(authentication);

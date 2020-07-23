@@ -15,7 +15,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("hawkbit.server.im")
 public class MultiUserProperties {
+    private String defaultTenant = "DEFAULT";
     private List<User> users = new ArrayList<>();
+
+    public String getDefaultTenant() {
+        return defaultTenant;
+    }
+
+    public void setDefaultTenant(String defaultTenant) {
+        this.defaultTenant = defaultTenant;
+    }
 
     public List<User> getUsers() {
         return users;

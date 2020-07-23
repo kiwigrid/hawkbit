@@ -34,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.security.oauth2.client.ClientsConfiguredCondition;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
@@ -82,6 +83,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Configuration
 @Conditional(value = ClientsConfiguredCondition.class)
 @AutoConfigureBefore({InMemoryUserManagementAutoConfiguration.class})
+@EnableConfigurationProperties({ MultiUserProperties.class })
 public class OidcUserManagementAutoConfiguration {
 
     /**
@@ -263,11 +265,14 @@ class OidcAuthenticationSuccessHandler extends SavedRequestAwareAuthenticationSu
     @Autowired
     private UserDetailsService userDetailsService;
 
+    @Autowired
+    private MultiUserProperties multiUserProperties;
+
     @Override
     public void onAuthenticationSuccess(final HttpServletRequest request, final HttpServletResponse response,
             final Authentication authentication) throws ServletException, IOException {
         if (authentication instanceof OAuth2AuthenticationToken) {
-            final String defaultTenant = "DEFAULT";
+            final String defaultTenant = multiUserProperties.getDefaultTenant();
 
             final AbstractAuthenticationToken token = (OAuth2AuthenticationToken) authentication;
             token.setDetails(new TenantAwareAuthenticationDetails(defaultTenant, false));
@@ -389,6 +394,9 @@ class OidcBearerTokenAuthenticationFilter implements UserAuthenticationFilter, F
     @Autowired
     private SystemSecurityContext systemSecurityContext;
 
+    @Autowired
+    private MultiUserProperties multiUserProperties;
+
     private ClientRegistration clientRegistration;
 
     void setClientRegistration(final ClientRegistration clientRegistration) {
@@ -401,7 +409,7 @@ class OidcBearerTokenAuthenticationFilter implements UserAuthenticationFilter, F
 
         final Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof JwtAuthenticationToken) {
-            final String defaultTenant = "DEFAULT";
+            final String defaultTenant = multiUserProperties.getDefaultTenant();
 
             final JwtAuthenticationToken jwtAuthenticationToken = (JwtAuthenticationToken) authentication;
             final Jwt jwt = jwtAuthenticationToken.getToken();

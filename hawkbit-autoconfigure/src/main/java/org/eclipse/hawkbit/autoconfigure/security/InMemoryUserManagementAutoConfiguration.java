@@ -42,8 +42,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 @EnableConfigurationProperties({ MultiUserProperties.class })
 public class InMemoryUserManagementAutoConfiguration extends GlobalAuthenticationConfigurerAdapter {
 
-    private static final String DEFAULT_TENANT = "DEFAULT";
-
     private final SecurityProperties securityProperties;
 
     private final MultiUserProperties multiUserProperties;
@@ -56,7 +54,8 @@ public class InMemoryUserManagementAutoConfiguration extends GlobalAuthenticatio
 
     @Override
     public void configure(final AuthenticationManagerBuilder auth) throws Exception {
-        final DaoAuthenticationProvider userDaoAuthenticationProvider = new TenantDaoAuthenticationProvider();
+        final DaoAuthenticationProvider userDaoAuthenticationProvider = new TenantDaoAuthenticationProvider(
+                multiUserProperties.getDefaultTenant());
         userDaoAuthenticationProvider.setUserDetailsService(userDetailsService());
         auth.authenticationProvider(userDaoAuthenticationProvider);
     }
@@ -80,8 +79,8 @@ public class InMemoryUserManagementAutoConfiguration extends GlobalAuthenticatio
             }
 
             final UserPrincipal userPrincipal = new UserPrincipal(user.getUsername(), user.getPassword(),
-                    user.getFirstname(), user.getLastname(), user.getUsername(), user.getEmail(), DEFAULT_TENANT,
-                    authorityList);
+                    user.getFirstname(), user.getLastname(), user.getUsername(), user.getEmail(),
+                    multiUserProperties.getDefaultTenant(), authorityList);
             userPrincipals.add(userPrincipal);
         }
 
@@ -95,7 +94,8 @@ public class InMemoryUserManagementAutoConfiguration extends GlobalAuthenticatio
                     ? PermissionUtils.createAllAuthorityList()
                     : createAuthoritiesFromList(roles);
             userPrincipals
-                    .add(new UserPrincipal(name, password, name, name, name, null, DEFAULT_TENANT, authorityList));
+                    .add(new UserPrincipal(name, password, name, name, name, null,
+                            multiUserProperties.getDefaultTenant(), authorityList));
         }
 
         return new FixedInMemoryUserPrincipalUserDetailsService(userPrincipals);
@@ -147,12 +147,18 @@ public class InMemoryUserManagementAutoConfiguration extends GlobalAuthenticatio
 
     private static class TenantDaoAuthenticationProvider extends DaoAuthenticationProvider {
 
+        private final String tenant;
+
+        private TenantDaoAuthenticationProvider(final String tenant) {
+            this.tenant = tenant;
+        }
+
         @Override
         protected Authentication createSuccessAuthentication(final Object principal,
                 final Authentication authentication, final UserDetails user) {
             final UsernamePasswordAuthenticationToken result = new UsernamePasswordAuthenticationToken(principal,
                     authentication.getCredentials(), user.getAuthorities());
-            result.setDetails(new TenantAwareAuthenticationDetails("DEFAULT", false));
+            result.setDetails(new TenantAwareAuthenticationDetails(tenant, false));
             return result;
         }
     }
